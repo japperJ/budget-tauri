@@ -3,49 +3,18 @@ import Database from "@tauri-apps/plugin-sql";
 
 let dbPromise: Promise<Database> | null = null;
 
-export function getDb() {
-  if (!dbPromise) dbPromise = Database.load("sqlite:budget.db");
+export async function getDb() {
+  if (!dbPromise) {
+    dbPromise = Database.load("sqlite:budget.db").then(async (db) => {
+      await db.execute(`CREATE TABLE IF NOT EXISTS accounts (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'checking', currency TEXT NOT NULL DEFAULT 'DKK', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`);
+      await db.execute(`CREATE TABLE IF NOT EXISTS categories (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'expense', color TEXT NOT NULL DEFAULT '#6366f1', icon TEXT DEFAULT 'tag', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`);
+      await db.execute(`CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, date TEXT NOT NULL, amount INTEGER NOT NULL, type TEXT NOT NULL DEFAULT 'expense', description TEXT NOT NULL DEFAULT '', category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`);
+      await db.execute(`CREATE TABLE IF NOT EXISTS budgets (id INTEGER PRIMARY KEY AUTOINCREMENT, account_id INTEGER REFERENCES accounts(id) ON DELETE CASCADE, category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE, amount INTEGER NOT NULL, period TEXT NOT NULL DEFAULT 'monthly', month TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`);
+      await db.execute(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_tx ON transactions (account_id, date, amount, type, description)`);
+      return db;
+    });
+  }
   return dbPromise;
-}
-
-export async function initDb() {
-  const db = await getDb();
-  // schema is created by the Rust side / migrations; ensure tables exist
-  await db.execute(`CREATE TABLE IF NOT EXISTS accounts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    type TEXT NOT NULL DEFAULT 'checking',
-    currency TEXT NOT NULL DEFAULT 'DKK',
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-  )`);
-  await db.execute(`CREATE TABLE IF NOT EXISTS categories (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    type TEXT NOT NULL DEFAULT 'expense',
-    color TEXT NOT NULL DEFAULT '#6366f1',
-    icon TEXT DEFAULT 'tag',
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-  )`);
-  await db.execute(`CREATE TABLE IF NOT EXISTS transactions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-    date TEXT NOT NULL,
-    amount INTEGER NOT NULL,
-    type TEXT NOT NULL DEFAULT 'expense',
-    description TEXT NOT NULL DEFAULT '',
-    category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-  )`);
-  await db.execute(`CREATE TABLE IF NOT EXISTS budgets (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    account_id INTEGER REFERENCES accounts(id) ON DELETE CASCADE,
-    category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
-    amount INTEGER NOT NULL,
-    period TEXT NOT NULL DEFAULT 'monthly',
-    month TEXT,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-  )`);
-  await db.execute(`CREATE UNIQUE INDEX IF NOT EXISTS uniq_tx ON transactions (account_id, date, amount, type, description)`);
 }
 
 // ---- Accounts ----
