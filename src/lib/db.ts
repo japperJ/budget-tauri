@@ -56,14 +56,14 @@ export async function getAccounts() {
 
 export async function addAccount(name: string, type = "checking", currency = "DKK") {
   const db = await getDb();
-  await db.execute("INSERT INTO accounts (name, type, currency) VALUES ($1, $2, $3)", [name, type, currency]);
+  await db.execute("INSERT INTO accounts (name, type, currency) VALUES (?, ?, ?)", [name, type, currency]);
   const rows = await db.select<any[]>("SELECT * FROM accounts ORDER BY id DESC LIMIT 1", []);
   return rows[0];
 }
 
 export async function deleteAccount(id: number) {
   const db = await getDb();
-  await db.execute("DELETE FROM accounts WHERE id = $1", [id]);
+  await db.execute("DELETE FROM accounts WHERE id = ?", [id]);
 }
 
 // ---- Categories ----
@@ -74,14 +74,14 @@ export async function getCategories() {
 
 export async function addCategory(name: string, type = "expense", color = "#6366f1", icon = "tag") {
   const db = await getDb();
-  await db.execute("INSERT INTO categories (name, type, color, icon) VALUES ($1, $2, $3, $4)", [name, type, color, icon]);
+  await db.execute("INSERT INTO categories (name, type, color, icon) VALUES (?, ?, ?, ?)", [name, type, color, icon]);
   const rows = await db.select<any[]>("SELECT * FROM categories ORDER BY id DESC LIMIT 1", []);
   return rows[0];
 }
 
 export async function deleteCategory(id: number) {
   const db = await getDb();
-  await db.execute("DELETE FROM categories WHERE id = $1", [id]);
+  await db.execute("DELETE FROM categories WHERE id = ?", [id]);
 }
 
 // ---- Transactions ----
@@ -100,11 +100,11 @@ export async function getTransactions(filters: { month?: string; type?: string; 
   let sql = "SELECT * FROM transactions WHERE 1=1";
   const params: any[] = [];
   let i = 1;
-  if (filters.month) { sql += ` AND date LIKE $${i++}`; params.push(filters.month + "%"); }
-  if (filters.type) { sql += ` AND type = $${i++}`; params.push(filters.type); }
-  if (filters.categoryId) { sql += ` AND category_id = $${i++}`; params.push(Number(filters.categoryId)); }
-  if (filters.accountId) { sql += ` AND account_id = $${i++}`; params.push(Number(filters.accountId)); }
-  if (filters.search) { sql += ` AND description LIKE $${i++}`; params.push("%" + filters.search + "%"); }
+  if (filters.month) { sql += ` AND date LIKE ?`; params.push(filters.month + "%"); }
+  if (filters.type) { sql += ` AND type = ?`; params.push(filters.type); }
+  if (filters.categoryId) { sql += ` AND category_id = ?`; params.push(Number(filters.categoryId)); }
+  if (filters.accountId) { sql += ` AND account_id = ?`; params.push(Number(filters.accountId)); }
+  if (filters.search) { sql += ` AND description LIKE ?`; params.push("%" + filters.search + "%"); }
   sql += " ORDER BY date DESC, id DESC";
   const rows = await db.select<any[]>(sql, params);
   return rows.map((r: any) => ({
@@ -121,7 +121,7 @@ export async function getTransactions(filters: { month?: string; type?: string; 
 export async function addTransaction(t: { accountId: number; date: string; amount: number; type: string; description: string; categoryId: number | null }) {
   const db = await getDb();
   await db.execute(
-    "INSERT INTO transactions (account_id, date, amount, type, description, category_id) VALUES ($1, $2, $3, $4, $5, $6)",
+    "INSERT INTO transactions (account_id, date, amount, type, description, category_id) VALUES (?, ?, ?, ?, ?, ?)",
     [t.accountId, t.date, Math.abs(t.amount), t.type, t.description, t.categoryId]
   );
 }
@@ -131,34 +131,34 @@ export async function updateTransaction(id: number, patch: any) {
   const sets: string[] = [];
   const params: any[] = [];
   let i = 1;
-  if (patch.accountId !== undefined) { sets.push(`account_id = $${i++}`); params.push(Number(patch.accountId)); }
-  if (patch.date !== undefined) { sets.push(`date = $${i++}`); params.push(patch.date); }
-  if (patch.amount !== undefined) { sets.push(`amount = $${i++}`); params.push(Math.abs(Number(patch.amount))); }
-  if (patch.type !== undefined) { sets.push(`type = $${i++}`); params.push(patch.type); }
-  if (patch.description !== undefined) { sets.push(`description = $${i++}`); params.push(patch.description); }
-  if (patch.categoryId !== undefined) { sets.push(`category_id = $${i++}`); params.push(patch.categoryId === null ? null : Number(patch.categoryId)); }
+  if (patch.accountId !== undefined) { sets.push(`account_id = ?`); params.push(Number(patch.accountId)); }
+  if (patch.date !== undefined) { sets.push(`date = ?`); params.push(patch.date); }
+  if (patch.amount !== undefined) { sets.push(`amount = ?`); params.push(Math.abs(Number(patch.amount))); }
+  if (patch.type !== undefined) { sets.push(`type = ?`); params.push(patch.type); }
+  if (patch.description !== undefined) { sets.push(`description = ?`); params.push(patch.description); }
+  if (patch.categoryId !== undefined) { sets.push(`category_id = ?`); params.push(patch.categoryId === null ? null : Number(patch.categoryId)); }
   if (!sets.length) return;
   params.push(id);
-  await db.execute(`UPDATE transactions SET ${sets.join(", ")} WHERE id = $${i}`, params);
+  await db.execute(`UPDATE transactions SET ${sets.join(", ")} WHERE id = ?`, params);
 }
 
 export async function deleteTransaction(id: number) {
   const db = await getDb();
-  await db.execute("DELETE FROM transactions WHERE id = $1", [id]);
+  await db.execute("DELETE FROM transactions WHERE id = ?", [id]);
 }
 
 export async function deleteTransactions(ids: number[]) {
   const db = await getDb();
   if (!ids.length) return;
-  const placeholders = ids.map((_, i) => `$${i + 1}`).join(",");
+  const placeholders = ids.map(() => "?").join(",");
   await db.execute(`DELETE FROM transactions WHERE id IN (${placeholders})`, ids);
 }
 
 export async function updateTransactionsCategory(ids: number[], categoryId: number | null) {
   const db = await getDb();
   if (!ids.length) return;
-  const placeholders = ids.map((_, i) => `$${i + 1}`).join(",");
-  await db.execute(`UPDATE transactions SET category_id = $${ids.length + 1} WHERE id IN (${placeholders})`, [...ids, categoryId]);
+  const placeholders = ids.map(() => "?").join(",");
+  await db.execute(`UPDATE transactions SET category_id = ? WHERE id IN (${placeholders})`, [categoryId, ...ids]);
 }
 
 // ---- Budgets ----
@@ -166,7 +166,7 @@ export async function getBudgets(accountId?: string) {
   const db = await getDb();
   let sql = "SELECT * FROM budgets WHERE 1=1";
   const params: any[] = [];
-  if (accountId) { sql += " AND (account_id = $1 OR account_id IS NULL)"; params.push(Number(accountId)); }
+  if (accountId) { sql += " AND (account_id = ? OR account_id IS NULL)"; params.push(Number(accountId)); }
   const rows = await db.select<any[]>(sql, params);
   return rows.map((r: any) => ({
     id: r.id,
@@ -180,7 +180,7 @@ export async function getBudgets(accountId?: string) {
 
 export async function addBudget(categoryId: number, amount: number, period = "monthly", month: string | null = null, accountId: number | null = null) {
   const db = await getDb();
-  await db.execute("INSERT INTO budgets (account_id, category_id, amount, period, month) VALUES ($1, $2, $3, $4, $5)", [accountId, categoryId, Math.abs(amount), period, month]);
+  await db.execute("INSERT INTO budgets (account_id, category_id, amount, period, month) VALUES (?, ?, ?, ?, ?)", [accountId, categoryId, Math.abs(amount), period, month]);
 }
 
 export async function updateBudget(id: number, patch: any) {
@@ -188,18 +188,18 @@ export async function updateBudget(id: number, patch: any) {
   const sets: string[] = [];
   const params: any[] = [];
   let i = 1;
-  if (patch.amount !== undefined) { sets.push(`amount = $${i++}`); params.push(Math.abs(Number(patch.amount))); }
-  if (patch.period !== undefined) { sets.push(`period = $${i++}`); params.push(patch.period); }
-  if (patch.month !== undefined) { sets.push(`month = $${i++}`); params.push(patch.month); }
-  if (patch.categoryId !== undefined) { sets.push(`category_id = $${i++}`); params.push(Number(patch.categoryId)); }
+  if (patch.amount !== undefined) { sets.push(`amount = ?`); params.push(Math.abs(Number(patch.amount))); }
+  if (patch.period !== undefined) { sets.push(`period = ?`); params.push(patch.period); }
+  if (patch.month !== undefined) { sets.push(`month = ?`); params.push(patch.month); }
+  if (patch.categoryId !== undefined) { sets.push(`category_id = ?`); params.push(Number(patch.categoryId)); }
   if (!sets.length) return;
   params.push(id);
-  await db.execute(`UPDATE budgets SET ${sets.join(", ")} WHERE id = $${i}`, params);
+  await db.execute(`UPDATE budgets SET ${sets.join(", ")} WHERE id = ?`, params);
 }
 
 export async function deleteBudget(id: number) {
   const db = await getDb();
-  await db.execute("DELETE FROM budgets WHERE id = $1", [id]);
+  await db.execute("DELETE FROM budgets WHERE id = ?", [id]);
 }
 
 // ---- Seed ----
@@ -317,11 +317,11 @@ export async function seedDefaults() {
       ["Andet", "expense", "#6b7280", "more-horizontal"],
     ];
     for (const c of defaults) {
-      await db.execute("INSERT INTO categories (name, type, color, icon) VALUES ($1, $2, $3, $4)", c);
+      await db.execute("INSERT INTO categories (name, type, color, icon) VALUES (?, ?, ?, ?)", c);
     }
   }
   const accs = await db.select<any[]>("SELECT COUNT(*) as c FROM accounts", []);
   if ((accs[0]?.c ?? 0) === 0) {
-    await db.execute("INSERT INTO accounts (name, type, currency) VALUES ($1, $2, $3)", ["Hovedkonto", "checking", "DKK"]);
+    await db.execute("INSERT INTO accounts (name, type, currency) VALUES (?, ?, ?)", ["Hovedkonto", "checking", "DKK"]);
   }
 }
