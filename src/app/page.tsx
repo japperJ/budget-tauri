@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatMoney, formatMonth } from "@/lib/format";
+import { getAccounts, computeSummary } from "@/lib/db";
 import {
   TrendingUp, TrendingDown, Wallet, ArrowUpRight, ArrowDownRight, PieChart as PieChartIcon,
 } from "lucide-react";
@@ -34,10 +35,6 @@ export default function Dashboard() {
   const [data, setData] = useState<Summary | null>(null);
   const hoveredMonthRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    fetch("/api/accounts").then((r) => r.json()).then(setAccounts);
-  }, []);
-
   const handleBarClick = (d: any) => {
     const m = d?.activePayload?.[0]?.payload?.month;
     if (m) router.push(`/transactions?month=${m}`);
@@ -47,10 +44,11 @@ export default function Dashboard() {
     if (!month) setMonth(new Date().toISOString().slice(0, 7));
   }, []);
   useEffect(() => {
+    getAccounts().then(setAccounts);
+  }, []);
+  useEffect(() => {
     if (!month) return;
-    const params = new URLSearchParams({ month });
-    if (accountId) params.set("accountId", accountId);
-    fetch(`/api/summary?${params}`).then((r) => r.json()).then(setData);
+    computeSummary(month, accountId || undefined).then(setData);
   }, [month, accountId]);
 
   const cfData = data?.cashflow.map((c) => ({

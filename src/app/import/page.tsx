@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import { UploadCloud, FileText } from "lucide-react";
+import { getAccounts } from "@/lib/db";
+import { importCsv } from "@/lib/import";
 
 type Acc = { id: number; name: string };
 
@@ -12,8 +14,8 @@ export default function ImportPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetch("/api/accounts").then((r) => r.json()).then((a) => {
-      setAccs(a);
+    getAccounts().then((a) => {
+      setAccs(a as Acc[]);
       if (a.length) setAccountId(String(a[0].id));
     });
   }, []);
@@ -22,11 +24,7 @@ export default function ImportPage() {
     e.preventDefault();
     if (!file) return;
     setLoading(true);
-    const form = new FormData();
-    form.append("file", file);
-    form.append("accountId", accountId);
-    const res = await fetch("/api/import", { method: "POST", body: form });
-    const data = await res.json();
+    const data = await importCsv(file, Number(accountId));
     setResult(data);
     setLoading(false);
   };
@@ -58,7 +56,7 @@ export default function ImportPage() {
                 type="file"
                 accept=".csv,text/csv"
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                className="mt-1 block w-full cursor-pointer rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 dark:bg-indigo-950/40 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-indigo-700 hover:file:bg-indigo-100"
+                className="mt-1 block w-full cursor-pointer rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 dark:file:bg-indigo-950/40 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-indigo-700 dark:file:text-indigo-300 hover:file:bg-indigo-100 dark:hover:file:bg-indigo-900/40"
                 required
               />
               {file && <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Valgt: {file.name}</p>}
@@ -85,7 +83,7 @@ export default function ImportPage() {
               </p>
               {result.errors?.length > 0 && (
                 <div className="mt-3">
-                  <p className="text-sm font-medium text-red-600">Fejl ({result.errors.length}):</p>
+                  <p className="text-sm font-medium text-red-600 dark:text-red-400">Fejl ({result.errors.length}):</p>
                   <ul className="mt-1 list-disc pl-5 text-xs text-slate-600 dark:text-slate-300">
                     {result.errors.map((e: string, i: number) => <li key={i}>{e}</li>)}
                   </ul>

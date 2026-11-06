@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { Plus, Trash2, Wallet, Tag } from "lucide-react";
+import { getAccounts, getCategories, addAccount, deleteAccount, addCategory, deleteCategory } from "@/lib/db";
 
 type Acc = { id: number; name: string; type: string; currency: string };
 type Cat = { id: number; name: string; type: string; color: string; icon: string | null };
@@ -14,44 +15,35 @@ export default function SettingsPage() {
   const [newCatColor, setNewCatColor] = useState("#6366f1");
 
   const load = async () => {
-    try {
-      const [aRes, cRes] = await Promise.all([
-        fetch("/api/accounts"),
-        fetch("/api/categories"),
-      ]);
-      const a = await aRes.json();
-      const c = await cRes.json();
-      if (Array.isArray(a)) setAccs(a);
-      if (Array.isArray(c)) setCats(c);
-    } catch (e) {
-      console.error("load failed:", e);
-    }
+    const [a, c] = await Promise.all([getAccounts(), getCategories()]);
+    setAccs(a as Acc[]);
+    setCats(c as Cat[]);
   };
   useEffect(() => { load(); }, []);
 
   const addAcc = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newAcc.trim()) return;
-    await fetch("/api/accounts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newAcc }) });
+    await addAccount(newAcc);
     setNewAcc("");
     load();
   };
   const delAcc = async (id: number) => {
     if (!confirm("Slet konto? Transaktioner slettes også.")) return;
-    await fetch(`/api/accounts/${id}`, { method: "DELETE" });
+    await deleteAccount(id);
     load();
   };
 
   const addCat = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCat.trim()) return;
-    await fetch("/api/categories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newCat, type: newCatType, color: newCatColor }) });
+    await addCategory(newCat, newCatType, newCatColor);
     setNewCat("");
     load();
   };
   const delCat = async (id: number) => {
     if (!confirm("Slet kategori?")) return;
-    await fetch(`/api/categories/${id}`, { method: "DELETE" });
+    await deleteCategory(id);
     load();
   };
 
@@ -79,16 +71,13 @@ export default function SettingsPage() {
               <Plus className="h-4 w-4" /> Tilføj
             </button>
           </form>
-          <ul className="divide-y divide-slate-100">
+          <ul className="divide-y divide-slate-100 dark:divide-slate-800">
             {accs.map((a) => (
               <li key={a.id} className="flex items-center justify-between py-3 text-sm">
                 <span className="font-medium text-slate-800 dark:text-slate-100">
                   {a.name} <span className="font-normal text-slate-400">({a.type}, {a.currency})</span>
                 </span>
-                <button
-                  onClick={() => delAcc(a.id)}
-                  className="rounded-lg p-1.5 text-slate-400 transition hover:bg-red-50 dark:hover:bg-red-950/40 dark:bg-red-950/40 hover:text-red-600"
-                >
+                <button onClick={() => delAcc(a.id)} className="rounded-lg p-1.5 text-slate-400 transition hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 dark:hover:text-red-400">
                   <Trash2 className="h-4 w-4" />
                 </button>
               </li>
@@ -129,16 +118,13 @@ export default function SettingsPage() {
           </form>
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {cats.map((c) => (
-              <div key={c.id} className="flex items-center justify-between rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 transition hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50">
+              <div key={c.id} className="flex items-center justify-between rounded-xl border border-slate-200 dark:border-slate-800 px-3 py-2 text-sm transition hover:bg-slate-50 dark:hover:bg-slate-800">
                 <span className="flex items-center gap-2">
                   <span className="inline-block h-3 w-3 rounded-full" style={{ background: c.color }} />
                   <span className="font-medium text-slate-800 dark:text-slate-100">{c.name}</span>
                   <span className="text-xs text-slate-400">({c.type})</span>
                 </span>
-                <button
-                  onClick={() => delCat(c.id)}
-                  className="rounded-lg p-1 text-slate-400 transition hover:bg-red-50 dark:hover:bg-red-950/40 dark:bg-red-950/40 hover:text-red-600"
-                >
+                <button onClick={() => delCat(c.id)} className="rounded-lg p-1 text-slate-400 transition hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 dark:hover:text-red-400">
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
               </div>

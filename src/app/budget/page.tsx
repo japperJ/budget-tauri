@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { formatMoney } from "@/lib/format";
+import { getAccounts, getCategories, getBudgets, addBudget, updateBudget, deleteBudget, computeSummary, getTransactions } from "@/lib/db";
 import { Target, TrendingUp } from "lucide-react";
 
 type Budget = { id: number; accountId: number | null; categoryId: number; amount: number; period: string; month: string | null };
@@ -19,24 +20,19 @@ export default function BudgetPage() {
 
   const load = async () => {
     const m = month || new Date().toISOString().slice(0, 7);
-    const params = new URLSearchParams();
-    if (accountId) params.set("accountId", accountId);
-    const budgetParams = new URLSearchParams(params);
-    const summaryParams = new URLSearchParams(params);
-    summaryParams.set("month", m);
     const [accs, c, b, s] = await Promise.all([
-      fetch("/api/accounts").then((r) => r.json()),
-      fetch("/api/categories").then((r) => r.json()),
-      fetch(`/api/budgets?${budgetParams}`).then((r) => r.json()),
-      fetch(`/api/summary?${summaryParams}`).then((r) => r.json()),
+      getAccounts(),
+      getCategories(),
+      getBudgets(accountId || undefined),
+      computeSummary(m, accountId || undefined),
     ]);
-    setAccounts(accs);
-    setCats(c);
-    setBudgets(b);
-    setSummary(s);
+    setAccounts(accs as any);
+    setCats(c as Cat[]);
+    setBudgets(b as Budget[]);
+    setSummary(s as any);
     const init: Record<number, string> = {};
-    for (const cat of c.filter((x: Cat) => x.type === "expense")) {
-      const bud = b.find((x: Budget) => x.categoryId === cat.id && (x.month === null || x.month === month));
+    for (const cat of (c as Cat[]).filter((x) => x.type === "expense")) {
+      const bud = (b as Budget[]).find((x) => x.categoryId === cat.id && (x.accountId === (accountId ? Number(accountId) : null) || x.accountId === null) && (x.month === null || x.month === month));
       init[cat.id] = bud ? (bud.amount / 100).toFixed(2).replace(".", ",") : "";
     }
     setInputs(init);
@@ -50,42 +46,18 @@ export default function BudgetPage() {
     const cents = Math.round(parseFloat((val || "0").replace(",", ".")) * 100);
     const existing = budgets.find((b) => b.categoryId === categoryId && (b.accountId === (accountId ? Number(accountId) : null) || b.accountId === null) && (b.month === null || b.month === month));
     if (existing) {
-      if (cents === 0) {
-        await fetch(`/api/budgets/${existing.id}`, { method: "DELETE" });
-      } else {
-        await fetch(`/api/budgets/${existing.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ amount: cents }),
-        });
-      }
+      if (cents === 0) await deleteBudget(existing.id);
+      else await updateBudget(existing.id, { amount: cents });
     } else if (cents > 0) {
-      await fetch("/api/budgets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ categoryId, amount: cents, period: "monthly", month: null, accountId: accountId ? Number(accountId) : null }),
-      });
+      await addBudget(categoryId, cents, "monthly", null, accountId ? Number(accountId) : null);
     }
     load();
   };
 
-  const expenseCats = cats.filter((c) => c.type === "expense");
-  const spentMap = new Map(summary?.byCategory.map((c) => [c.categoryId, c]) ?? []);
-
-  const totalBudget = expenseCats.reduce((s, c) => {
-    const v = parseFloat((inputs[c.id] || "0").replace(",", "."));
-    return s + (isNaN(v) ? 0 : v);
-  }, 0);
-  const totalSpent = summary?.byCategory.reduce((s, c) => s + c.spent, 0) ?? 0;
-  const remaining = Math.round(totalBudget * 100) - totalSpent;
-
   const calculateFromHistory = async () => {
     setCalculating(true);
     try {
-      const txParams = new URLSearchParams();
-      if (accountId) txParams.set("accountId", accountId);
-      const txs = await fetch(`/api/transactions?${txParams}`).then((r) => r.json());
-      // last 12 months
+      const txs = await getTransactions(accountId ? { accountId } : {});
       const now = new Date();
       const months: string[] = [];
       for (let i = 11; i >= 0; i--) {
@@ -106,16 +78,15 @@ export default function BudgetPage() {
         newInputs[cat.id] = avg > 0 ? (avg / 100).toFixed(2).replace(".", ",") : "";
       }
       setInputs(newInputs);
-      // auto-save
       for (const cat of expenseCats) {
         const val = newInputs[cat.id];
         const cents = Math.round(parseFloat((val || "0").replace(",", ".")) * 100);
-        const existing = budgets.find((b) => b.categoryId === cat.id && (b.month === null || b.month === month));
+        const existing = budgets.find((b) => b.categoryId === cat.id && (b.accountId === (accountId ? Number(accountId) : null) || b.accountId === null) && (b.month === null || b.month === month));
         if (existing) {
-          if (cents === 0) await fetch(`/api/budgets/${existing.id}`, { method: "DELETE" });
-          else await fetch(`/api/budgets/${existing.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amount: cents }) });
+          if (cents === 0) await deleteBudget(existing.id);
+          else await updateBudget(existing.id, { amount: cents });
         } else if (cents > 0) {
-          await fetch("/api/budgets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ categoryId: cat.id, amount: cents, period: "monthly", month: null, accountId: accountId ? Number(accountId) : null }) });
+          await addBudget(cat.id, cents, "monthly", null, accountId ? Number(accountId) : null);
         }
       }
       await load();
@@ -123,6 +94,16 @@ export default function BudgetPage() {
       setCalculating(false);
     }
   };
+
+  const expenseCats = cats.filter((c) => c.type === "expense");
+  const spentMap = new Map(summary?.byCategory.map((c) => [c.categoryId, c]) ?? []);
+
+  const totalBudget = expenseCats.reduce((s, c) => {
+    const v = parseFloat((inputs[c.id] || "0").replace(",", "."));
+    return s + (isNaN(v) ? 0 : v);
+  }, 0);
+  const totalSpent = summary?.byCategory.reduce((s, c) => s + c.spent, 0) ?? 0;
+  const remaining = Math.round(totalBudget * 100) - totalSpent;
 
   return (
     <div className="space-y-6">
@@ -143,7 +124,7 @@ export default function BudgetPage() {
           <button
             onClick={calculateFromHistory}
             disabled={calculating}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm transition hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50 disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm transition hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50"
           >
             {calculating ? "Beregner..." : "Beregn budget fra historik (1 år)"}
           </button>
@@ -159,12 +140,7 @@ export default function BudgetPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard title="Budget i alt" value={formatMoney(Math.round(totalBudget * 100))} icon={Target} tone="indigo" />
         <StatCard title="Brugt" value={formatMoney(totalSpent)} icon={TrendingUp} tone="red" />
-        <StatCard
-          title="Resterende"
-          value={formatMoney(remaining)}
-          icon={Target}
-          tone={remaining >= 0 ? "green" : "red"}
-        />
+        <StatCard title="Resterende" value={formatMoney(remaining)} icon={Target} tone={remaining >= 0 ? "green" : "red"} />
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
@@ -187,7 +163,7 @@ export default function BudgetPage() {
               const pct = budgetCents > 0 ? Math.min(100, (spent / budgetCents) * 100) : 0;
               const over = budgetCents > 0 && spent > budgetCents;
               return (
-                <tr key={c.id} className="transition hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50/60">
+                <tr key={c.id} className="transition hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
                   <td className="px-4 py-3">
                     <span className="flex items-center gap-2 font-medium text-slate-800 dark:text-slate-100">
                       <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: c.color }} />
@@ -201,11 +177,11 @@ export default function BudgetPage() {
                       onBlur={() => saveBudget(c.id)}
                       onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
                       placeholder="0,00"
-                      className="w-24 rounded-lg border border-slate-200 dark:border-slate-800 px-2 py-1 text-right text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                      className="w-24 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-2 py-1 text-right text-sm text-slate-900 dark:text-slate-100 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                     />
                   </td>
                   <td className="px-4 py-3 text-right text-slate-600 dark:text-slate-300">{formatMoney(spent)}</td>
-                  <td className={`px-4 py-3 text-right font-medium ${rem < 0 ? "text-red-600" : "text-green-600"}`}>
+                  <td className={`px-4 py-3 text-right font-medium ${rem < 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}>
                     {budgetCents > 0 ? formatMoney(rem) : "—"}
                   </td>
                   <td className="px-4 py-3">
@@ -227,7 +203,7 @@ export default function BudgetPage() {
 }
 
 function StatCard({ title, value, icon: Icon, tone }: { title: string; value: string; icon: any; tone: "indigo" | "red" | "green" }) {
-  const toneClasses = tone === "indigo" ? "bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600" : tone === "red" ? "bg-red-50 dark:bg-red-950/40 text-red-600" : "bg-green-50 dark:bg-green-950/40 text-green-600";
+  const toneClasses = tone === "indigo" ? "bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400" : tone === "red" ? "bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400" : "bg-green-50 dark:bg-green-950/40 text-green-600 dark:text-green-400";
   return (
     <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
       <div className="flex items-center justify-between">

@@ -1,7 +1,11 @@
 "use client";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { formatMoney, formatDate } from "@/lib/format";
+import {
+  getAccounts, getCategories, getTransactions, addTransaction,
+  updateTransaction, deleteTransaction, deleteTransactions, updateTransactionsCategory,
+} from "@/lib/db";
 import { Plus, Search, Trash2, Filter } from "lucide-react";
 
 type Tx = {
@@ -16,39 +20,31 @@ type Tx = {
 type Cat = { id: number; name: string; color: string; type: string };
 type Acc = { id: number; name: string };
 
-import { Suspense } from "react";
-
 function TransactionsPageInner() {
   const searchParams = useSearchParams();
   const [txs, setTxs] = useState<Tx[]>([]);
   const [cats, setCats] = useState<Cat[]>([]);
   const [accs, setAccs] = useState<Acc[]>([]);
+  const [accounts, setAccounts] = useState<Acc[]>([]);
   const [month, setMonth] = useState(searchParams.get("month") ?? "");
   const [type, setType] = useState("");
   const [categoryId, setCategoryId] = useState("");
-  const [search, setSearch] = useState("");
   const [accountId, setAccountId] = useState(searchParams.get("accountId") ?? "");
-  const [accounts, setAccounts] = useState<{ id: number; name: string }[]>([]);
+  const [search, setSearch] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [sortBy, setSortBy] = useState<"date" | "amount" | "description">("date");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [bulkCategory, setBulkCategory] = useState("");
 
-  const load = () => {
-    const params = new URLSearchParams();
-    if (month) params.set("month", month);
-    if (type) params.set("type", type);
-    if (categoryId) params.set("categoryId", categoryId);
-    if (accountId) params.set("accountId", accountId);
-    if (search) params.set("search", search);
-    fetch(`/api/transactions?${params}`).then((r) => r.json()).then(setTxs);
+  const load = async () => {
+    const [c, a] = await Promise.all([getCategories(), getAccounts()]);
+    setCats(c as Cat[]);
+    setAccs(a as Acc[]);
+    setAccounts(a as Acc[]);
+    const txs = await getTransactions({ month, type, categoryId, accountId, search });
+    setTxs(txs as Tx[]);
   };
-
-  useEffect(() => {
-    fetch("/api/categories").then((r) => r.json()).then(setCats);
-    fetch("/api/accounts").then((r) => r.json()).then((a) => { setAccs(a); setAccounts(a); });
-  }, []);
 
   useEffect(() => { load(); }, [month, type, categoryId, accountId, search]);
 
@@ -64,7 +60,7 @@ function TransactionsPageInner() {
 
   const toggleSort = (col: "date" | "amount" | "description") => {
     if (sortBy === col) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else { setSortBy(col); setSortDir(col === "amount" ? "desc" : "desc"); }
+    else { setSortBy(col); setSortDir("desc"); }
   };
 
   const toggleSelect = (id: number) => {
@@ -79,14 +75,26 @@ function TransactionsPageInner() {
     else setSelected(new Set(sortedTxs.map((t) => t.id)));
   };
 
+  const updateCategory = async (id: number, cid: string) => {
+    await updateTransaction(id, { categoryId: cid === "" ? null : Number(cid) });
+    load();
+  };
+
+  const remove = async (id: number) => {
+    if (!confirm("Slet transaktion?")) return;
+    await deleteTransaction(id);
+    load();
+  };
+
+  const autoCategorize = async () => {
+    // skip for now in tauri (no API)
+    alert("Auto-kategoriser er ikke tilgængelig i desktop-udgaven endnu.");
+  };
+
   const bulkDelete = async () => {
     if (selected.size === 0) return;
     if (!confirm(`Slet ${selected.size} transaktioner?`)) return;
-    await fetch("/api/transactions/bulk", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: [...selected], action: "delete" }),
-    });
+    await deleteTransactions([...selected]);
     setSelected(new Set());
     load();
   };
@@ -94,35 +102,9 @@ function TransactionsPageInner() {
   const bulkCategoryChange = async () => {
     if (selected.size === 0) return;
     const cid = (bulkCategory === "" || bulkCategory === "__none__") ? null : Number(bulkCategory);
-    await fetch("/api/transactions/bulk", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: [...selected], action: "category", categoryId: cid }),
-    });
+    await updateTransactionsCategory([...selected], cid);
     setSelected(new Set());
     setBulkCategory("");
-    load();
-  };
-
-  const updateCategory = async (id: number, cid: string) => {
-    await fetch(`/api/transactions/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ categoryId: cid === "" ? null : Number(cid) }),
-    });
-    load();
-  };
-
-  const remove = async (id: number) => {
-    if (!confirm("Slet transaktion?")) return;
-    await fetch(`/api/transactions/${id}`, { method: "DELETE" });
-    load();
-  };
-
-  const autoCategorize = async () => {
-    const res = await fetch("/api/categorize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
-    const data = await res.json();
-    alert(`Kategoriserede ${data.updated} af ${data.total} transaktioner.`);
     load();
   };
 
@@ -133,20 +115,12 @@ function TransactionsPageInner() {
           <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100">Transaktioner</h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{txs.length} transaktioner</p>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={autoCategorize}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm transition hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50"
-          >
-            Auto-kategoriser
-          </button>
-          <button
-            onClick={() => setShowAdd(true)}
-            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700"
-          >
-            <Plus className="h-4 w-4" /> Tilføj transaktion
-          </button>
-        </div>
+        <button
+          onClick={() => setShowAdd(true)}
+          className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700"
+        >
+          <Plus className="h-4 w-4" /> Tilføj transaktion
+        </button>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 shadow-sm">
@@ -154,7 +128,7 @@ function TransactionsPageInner() {
         <select
           value={accountId}
           onChange={(e) => setAccountId(e.target.value)}
-          className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+          className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-1.5 text-sm text-slate-900 dark:text-slate-100 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
         >
           <option value="">Alle konti</option>
           {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
@@ -163,7 +137,7 @@ function TransactionsPageInner() {
           type="month"
           value={month}
           onChange={(e) => setMonth(e.target.value)}
-          className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+          className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-1.5 text-sm text-slate-900 dark:text-slate-100 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
         />
         <select
           value={type}
@@ -194,13 +168,13 @@ function TransactionsPageInner() {
       </div>
 
       {selected.size > 0 && (
-        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-indigo-200 bg-indigo-50 dark:bg-indigo-950/40 px-4 py-3 shadow-sm">
-          <span className="text-sm font-medium text-indigo-700">{selected.size} valgt</span>
+        <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/40 px-4 py-3 shadow-sm">
+          <span className="text-sm font-medium text-indigo-700 dark:text-indigo-300">{selected.size} valgt</span>
           <div className="flex items-center gap-2">
             <select
               value={bulkCategory}
               onChange={(e) => setBulkCategory(e.target.value)}
-              className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-1.5 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+              className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-1.5 text-sm text-slate-900 dark:text-slate-100 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
             >
               <option value="">Vælg kategori...</option>
               <option value="__none__">Fjern kategori</option>
@@ -228,21 +202,16 @@ function TransactionsPageInner() {
           <thead className="bg-slate-50 dark:bg-slate-800/50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
             <tr>
               <th className="px-4 py-3 w-10">
-                <input
-                  type="checkbox"
-                  checked={sortedTxs.length > 0 && selected.size === sortedTxs.length}
-                  onChange={toggleSelectAll}
-                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                />
+                <input type="checkbox" checked={sortedTxs.length > 0 && selected.size === sortedTxs.length} onChange={toggleSelectAll} className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
               </th>
-              <th className="px-4 py-3 cursor-pointer select-none hover:text-slate-700 dark:text-slate-200" onClick={() => toggleSort("date")}>
+              <th className="px-4 py-3 cursor-pointer select-none hover:text-slate-700 dark:hover:text-slate-200" onClick={() => toggleSort("date")}>
                 Dato {sortBy === "date" ? (sortDir === "asc" ? "↑" : "↓") : ""}
               </th>
-              <th className="px-4 py-3 cursor-pointer select-none hover:text-slate-700 dark:text-slate-200" onClick={() => toggleSort("description")}>
+              <th className="px-4 py-3 cursor-pointer select-none hover:text-slate-700 dark:hover:text-slate-200" onClick={() => toggleSort("description")}>
                 Beskrivelse {sortBy === "description" ? (sortDir === "asc" ? "↑" : "↓") : ""}
               </th>
               <th className="px-4 py-3">Kategori</th>
-              <th className="px-4 py-3 text-right cursor-pointer select-none hover:text-slate-700 dark:text-slate-200" onClick={() => toggleSort("amount")}>
+              <th className="px-4 py-3 text-right cursor-pointer select-none hover:text-slate-700 dark:hover:text-slate-200" onClick={() => toggleSort("amount")}>
                 Beløb {sortBy === "amount" ? (sortDir === "asc" ? "↑" : "↓") : ""}
               </th>
               <th className="px-4 py-3"></th>
@@ -252,14 +221,9 @@ function TransactionsPageInner() {
             {sortedTxs.map((t) => {
               const c = t.categoryId ? catMap.get(t.categoryId) : null;
               return (
-                <tr key={t.id} className={`transition hover:bg-slate-50 dark:hover:bg-slate-800 dark:bg-slate-800/50/60 ${selected.has(t.id) ? "bg-indigo-50 dark:bg-indigo-950/40/40" : ""}`}>
+                <tr key={t.id} className={`transition hover:bg-slate-50/60 dark:hover:bg-slate-800/40 ${selected.has(t.id) ? "bg-indigo-50/40 dark:bg-indigo-950/30" : ""}`}>
                   <td className="px-4 py-3">
-                    <input
-                      type="checkbox"
-                      checked={selected.has(t.id)}
-                      onChange={() => toggleSelect(t.id)}
-                      className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                    />
+                    <input type="checkbox" checked={selected.has(t.id)} onChange={() => toggleSelect(t.id)} className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-slate-600 dark:text-slate-300">{formatDate(t.date)}</td>
                   <td className="px-4 py-3 font-medium text-slate-800 dark:text-slate-100">{t.description || "—"}</td>
@@ -274,14 +238,11 @@ function TransactionsPageInner() {
                       {cats.map((cc) => <option key={cc.id} value={cc.id}>{cc.name}</option>)}
                     </select>
                   </td>
-                  <td className={`px-4 py-3 text-right font-semibold ${t.type === "income" ? "text-green-600" : "text-red-600"}`}>
+                  <td className={`px-4 py-3 text-right font-semibold ${t.type === "income" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
                     {t.type === "income" ? "+" : "−"}{formatMoney(t.amount)}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => remove(t.id)}
-                      className="rounded-lg p-1.5 text-slate-400 transition hover:bg-red-50 dark:hover:bg-red-950/40 dark:bg-red-950/40 hover:text-red-600"
-                    >
+                    <button onClick={() => remove(t.id)} className="rounded-lg p-1.5 text-slate-400 transition hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 dark:hover:text-red-400">
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </td>
@@ -290,7 +251,7 @@ function TransactionsPageInner() {
             })}
             {sortedTxs.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-16 text-center">
+                <td colSpan={6} className="px-4 py-16 text-center">
                   <p className="text-sm text-slate-500 dark:text-slate-400">Ingen transaktioner fundet.</p>
                 </td>
               </tr>
@@ -317,17 +278,13 @@ function AddTransactionModal({ cats, accs, onClose, onSaved }: { cats: Cat[]; ac
     e.preventDefault();
     setSaving(true);
     const cents = Math.round(parseFloat(amount.replace(",", ".")) * 100);
-    await fetch("/api/transactions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        accountId: Number(accountId),
-        date,
-        amount: cents,
-        type,
-        description: desc,
-        categoryId: categoryId ? Number(categoryId) : null,
-      }),
+    await addTransaction({
+      accountId: Number(accountId),
+      date,
+      amount: cents,
+      type,
+      description: desc,
+      categoryId: categoryId ? Number(categoryId) : null,
     });
     setSaving(false);
     onSaved();
@@ -372,7 +329,7 @@ function AddTransactionModal({ cats, accs, onClose, onSaved }: { cats: Cat[]; ac
           </select>
         </label>
         <div className="flex justify-end gap-2 pt-2">
-          <button type="button" onClick={onClose} className="rounded-xl px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 transition hover:bg-slate-100 dark:hover:bg-slate-700 dark:bg-slate-800">Annuller</button>
+          <button type="button" onClick={onClose} className="rounded-xl px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 transition hover:bg-slate-100 dark:hover:bg-slate-800">Annuller</button>
           <button type="submit" disabled={saving} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:opacity-50">
             Gem
           </button>
@@ -381,9 +338,10 @@ function AddTransactionModal({ cats, accs, onClose, onSaved }: { cats: Cat[]; ac
     </div>
   );
 }
+
 export default function TransactionsPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-center text-slate-500 dark:text-slate-400">Indlæser...</div>}>
+    <Suspense fallback={<div className="p-8 text-center text-slate-500">Indlæser...</div>}>
       <TransactionsPageInner />
     </Suspense>
   );
