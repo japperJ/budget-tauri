@@ -32,6 +32,10 @@ function parseAmount(raw: string): number {
 
 export async function importCsv(file: File, accountId: number): Promise<{ imported: number; skipped: number; errors: string[]; total: number }> {
   const text = await file.text();
+  return importCsvText(text, accountId);
+}
+
+export async function importCsvText(text: string, accountId: number): Promise<{ imported: number; skipped: number; errors: string[]; total: number }> {
   const parsed = Papa.parse<Record<string, string>>(text, { header: true, skipEmptyLines: true });
   const headers = parsed.meta.fields ?? [];
   const dateH = findHeader(headers, ["dato", "date", "valør", "valordato", "posting", "bogføringsdato", "bogforingsdato", "rentedato", "valørdato"]);
