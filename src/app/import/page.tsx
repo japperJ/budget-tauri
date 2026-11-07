@@ -15,6 +15,7 @@ export default function ImportPage() {
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [result, setResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [selectedSkipped, setSelectedSkipped] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     getAccounts().then((a) => {
@@ -45,6 +46,7 @@ export default function ImportPage() {
     setLoading(true);
     const data = await importCsvText(fileContent, Number(accountId));
     setResult(data);
+    setSelectedSkipped(new Set());
     setLoading(false);
   };
 
@@ -104,15 +106,57 @@ export default function ImportPage() {
                 {result.skipped > 0 && <span className="ml-2 text-amber-600 dark:text-amber-400">({result.skipped} duplikater sprunget over)</span>}
               </p>
               {result.skippedRows?.length > 0 && (
-                <details className="mt-3">
+                <details className="mt-3" open>
                   <summary className="cursor-pointer text-sm font-medium text-amber-600 dark:text-amber-400">Vis duplikater ({result.skippedRows.length})</summary>
                   <ul className="mt-2 max-h-48 overflow-y-auto space-y-1 text-xs text-slate-600 dark:text-slate-300">
                     {result.skippedRows.map((r: any, i: number) => (
-                      <li key={i} className="rounded bg-slate-100 dark:bg-slate-800 px-2 py-1">
-                        {r.date} · {r.description || "(ingen beskrivelse)"} · {(r.amount / 100).toFixed(2).replace(".", ",")} kr.
+                      <li key={i} className="flex items-center gap-2 rounded bg-slate-100 dark:bg-slate-800 px-2 py-1">
+                        <input
+                          type="checkbox"
+                          checked={selectedSkipped.has(r.index)}
+                          onChange={() => {
+                            setSelectedSkipped((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(r.index)) next.delete(r.index); else next.add(r.index);
+                              return next;
+                            });
+                          }}
+                          className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                        <span>{r.date} · {r.description || "(ingen beskrivelse)"} · {(r.amount / 100).toFixed(2).replace(".", ",")} kr.</span>
                       </li>
                     ))}
                   </ul>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      onClick={async () => {
+                        if (!fileContent || selectedSkipped.size === 0) return;
+                        setLoading(true);
+                        const data = await importCsvText(fileContent, Number(accountId), false, [...selectedSkipped]);
+                        setResult(data);
+                        setSelectedSkipped(new Set());
+                        setLoading(false);
+                      }}
+                      disabled={loading || selectedSkipped.size === 0}
+                      className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:opacity-50"
+                    >
+                      Importér valgte ({selectedSkipped.size})
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!fileContent) return;
+                        setLoading(true);
+                        const data = await importCsvText(fileContent, Number(accountId), true);
+                        setResult(data);
+                        setSelectedSkipped(new Set());
+                        setLoading(false);
+                      }}
+                      disabled={loading}
+                      className="inline-flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-amber-700 disabled:opacity-50"
+                    >
+                      Importér alligevel ({result.skipped} duplikater)
+                    </button>
+                  </div>
                 </details>
               )}
               {result.skipped > 0 && (
