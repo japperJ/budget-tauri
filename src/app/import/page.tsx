@@ -103,6 +103,18 @@ export default function ImportPage() {
                 Importeret: <strong className="text-slate-900 dark:text-slate-100">{result.imported}</strong> af {result.total} rækker.
                 {result.skipped > 0 && <span className="ml-2 text-amber-600 dark:text-amber-400">({result.skipped} duplikater sprunget over)</span>}
               </p>
+              {result.skippedRows?.length > 0 && (
+                <details className="mt-3">
+                  <summary className="cursor-pointer text-sm font-medium text-amber-600 dark:text-amber-400">Vis duplikater ({result.skippedRows.length})</summary>
+                  <ul className="mt-2 max-h-48 overflow-y-auto space-y-1 text-xs text-slate-600 dark:text-slate-300">
+                    {result.skippedRows.map((r: any, i: number) => (
+                      <li key={i} className="rounded bg-slate-100 dark:bg-slate-800 px-2 py-1">
+                        {r.date} · {r.description || "(ingen beskrivelse)"} · {(r.amount / 100).toFixed(2).replace(".", ",")} kr.
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
               {result.errors?.length > 0 && (
                 <div className="mt-3">
                   <p className="text-sm font-medium text-red-600 dark:text-red-400">Fejl ({result.errors.length}):</p>

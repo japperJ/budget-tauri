@@ -30,12 +30,12 @@ function parseAmount(raw: string): number {
   return isNaN(n) ? 0 : Math.round(n * 100);
 }
 
-export async function importCsv(file: File, accountId: number): Promise<{ imported: number; skipped: number; errors: string[]; total: number }> {
+export async function importCsv(file: File, accountId: number): Promise<{ imported: number; skipped: number; skippedRows: { date: string; description: string; amount: number }[]; errors: string[]; total: number }> {
   const text = await file.text();
   return importCsvText(text, accountId);
 }
 
-export async function importCsvText(text: string, accountId: number): Promise<{ imported: number; skipped: number; errors: string[]; total: number }> {
+export async function importCsvText(text: string, accountId: number): Promise<{ imported: number; skipped: number; skippedRows: { date: string; description: string; amount: number }[]; errors: string[]; total: number }> {
   const parsed = Papa.parse<Record<string, string>>(text, { header: true, skipEmptyLines: true });
   const headers = parsed.meta.fields ?? [];
   const dateH = findHeader(headers, ["dato", "date", "valør", "valordato", "posting", "bogføringsdato", "bogforingsdato", "rentedato", "valørdato"]);
@@ -56,6 +56,7 @@ export async function importCsvText(text: string, accountId: number): Promise<{ 
   }
 
   let imported = 0, skipped = 0;
+  const skippedRows: { date: string; description: string; amount: number }[] = [];
   const errors: string[] = [];
 
   for (const row of parsed.data) {
@@ -85,7 +86,11 @@ export async function importCsvText(text: string, accountId: number): Promise<{ 
       const balancePart = balanceH ? String(row[balanceH] ?? "").trim() : "";
       const key = `${accountId}|${date}|${amountCents}|${type}|${description}|${balancePart}`;
       const keyNoBalance = `${accountId}|${date}|${amountCents}|${type}|${description}|`;
-      if (seenKeys.has(key) || seenKeys.has(keyNoBalance)) { skipped++; continue; }
+      if (seenKeys.has(key) || seenKeys.has(keyNoBalance)) {
+        skipped++;
+        skippedRows.push({ date, description, amount: amountCents });
+        continue;
+      }
 
       let suggested = suggestCategoryId(description, cats as any, existing.map((t: any) => ({ description: t.description, categoryId: t.category_id })));
       if (catH) {
@@ -105,5 +110,5 @@ export async function importCsvText(text: string, accountId: number): Promise<{ 
     }
   }
 
-  return { imported, skipped, errors: errors.slice(0, 20), total: parsed.data.length };
+  return { imported, skipped, skippedRows, errors: errors.slice(0, 20), total: parsed.data.length };
 }
