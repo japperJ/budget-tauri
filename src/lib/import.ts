@@ -46,7 +46,14 @@ export async function importCsvText(text: string, accountId: number): Promise<{ 
 
   const cats = await getCategories();
   const existing = await getTransactions({ accountId: String(accountId) });
-  const seenKeys = new Set(existing.map((e: any) => `${accountId}|${e.date}|${e.amount}|${e.type}|${e.description}`));
+  const balanceH = findHeader(headers, ["saldo", "balance", "delsaldo"]);
+  const catH = findHeader(headers, ["hovedkategori", "kategori", "category"]);
+  const commentH = findHeader(headers, ["kommentar", "comment", "note"]);
+
+  const seenKeys = new Set<string>();
+  for (const e of existing) {
+    seenKeys.add(`${accountId}|${e.date}|${e.amount}|${e.type}|${e.description}|`);
+  }
 
   let imported = 0, skipped = 0;
   const errors: string[] = [];
@@ -69,13 +76,29 @@ export async function importCsvText(text: string, accountId: number): Promise<{ 
         else if (c > 0) { type = "income"; amountCents = c; }
       }
 
-      const description = descH ? String(row[descH] ?? "").trim() : "";
-      const key = `${accountId}|${date}|${amountCents}|${type}|${description}`;
-      if (seenKeys.has(key)) { skipped++; continue; }
+      let description = descH ? String(row[descH] ?? "").trim() : "";
+      if (commentH) {
+        const cmt = String(row[commentH] ?? "").trim();
+        if (cmt) description = description ? `${description} (${cmt})` : cmt;
+      }
 
-      const suggested = suggestCategoryId(description, cats as any, existing.map((t: any) => ({ description: t.description, categoryId: t.category_id })));
+      const balancePart = balanceH ? String(row[balanceH] ?? "").trim() : "";
+      const key = `${accountId}|${date}|${amountCents}|${type}|${description}|${balancePart}`;
+      const keyNoBalance = `${accountId}|${date}|${amountCents}|${type}|${description}|`;
+      if (seenKeys.has(key) || seenKeys.has(keyNoBalance)) { skipped++; continue; }
+
+      let suggested = suggestCategoryId(description, cats as any, existing.map((t: any) => ({ description: t.description, categoryId: t.category_id })));
+      if (catH) {
+        const catName = String(row[catH] ?? "").trim().toLowerCase();
+        if (catName) {
+          const matched = (cats as any[]).find((c: any) => c.name.toLowerCase() === catName || c.name.toLowerCase().includes(catName));
+          if (matched) suggested = matched.id;
+        }
+      }
+
       await addTransaction({ accountId, date, amount: amountCents, type, description, categoryId: suggested });
       seenKeys.add(key);
+      seenKeys.add(keyNoBalance);
       imported++;
     } catch (e: any) {
       errors.push(e?.message ?? String(e));
