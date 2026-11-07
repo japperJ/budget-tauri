@@ -3,6 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Moon, Sun } from "lucide-react";
 import { useTheme } from "@/components/theme-provider";
+import { APP_VERSION } from "@/lib/version";
 import {
   LayoutDashboard, Receipt, Wallet, Upload, Settings as SettingsIcon, PiggyBank,
 } from "lucide-react";
@@ -65,7 +66,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </nav>
         <div className="px-4 py-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
           <ThemeToggle />
-          <div className="text-xs text-slate-400 dark:text-slate-500">DKK · da-DK</div>
+          <div className="text-xs text-slate-400 dark:text-slate-500">DKK · da-DK · v{APP_VERSION}</div>
         </div>
       </aside>
 

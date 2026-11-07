@@ -45,6 +45,9 @@ cargo tauri build
 cp src-tauri/target/release/budget-tauri ~/.local/bin/budget
 ```
 
+## Versionering
+Ved hver ændring bumpt version-nummeret i `package.json`, `src-tauri/tauri.conf.json` og `src/lib/version.ts`.
+
 ## Data storage
 SQLite database stored in the app's data directory:
 - Linux: `~/.local/share/com.budget.app/budget.db`
