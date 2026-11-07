@@ -35,7 +35,7 @@ export async function importCsv(file: File, accountId: number): Promise<{ import
   return importCsvText(text, accountId);
 }
 
-export async function importCsvText(text: string, accountId: number): Promise<{ imported: number; skipped: number; skippedRows: { date: string; description: string; amount: number }[]; errors: string[]; total: number }> {
+export async function importCsvText(text: string, accountId: number, force = false): Promise<{ imported: number; skipped: number; skippedRows: { date: string; description: string; amount: number }[]; errors: string[]; total: number }> {
   const parsed = Papa.parse<Record<string, string>>(text, { header: true, skipEmptyLines: true });
   const headers = parsed.meta.fields ?? [];
   const dateH = findHeader(headers, ["dato", "date", "valør", "valordato", "posting", "bogføringsdato", "bogforingsdato", "rentedato", "valørdato"]);
@@ -86,7 +86,7 @@ export async function importCsvText(text: string, accountId: number): Promise<{ 
       const balancePart = balanceH ? String(row[balanceH] ?? "").trim() : "";
       const key = `${accountId}|${date}|${amountCents}|${type}|${description}|${balancePart}`;
       const keyNoBalance = `${accountId}|${date}|${amountCents}|${type}|${description}|`;
-      if (seenKeys.has(key) || seenKeys.has(keyNoBalance)) {
+      if (!force && (seenKeys.has(key) || seenKeys.has(keyNoBalance))) {
         skipped++;
         skippedRows.push({ date, description, amount: amountCents });
         continue;

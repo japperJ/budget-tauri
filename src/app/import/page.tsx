@@ -115,6 +115,21 @@ export default function ImportPage() {
                   </ul>
                 </details>
               )}
+              {result.skipped > 0 && (
+                <button
+                  onClick={async () => {
+                    if (!fileContent) return;
+                    setLoading(true);
+                    const data = await importCsvText(fileContent, Number(accountId), true);
+                    setResult(data);
+                    setLoading(false);
+                  }}
+                  disabled={loading}
+                  className="mt-3 inline-flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-amber-700 disabled:opacity-50"
+                >
+                  Importér alligevel ({result.skipped} duplikater)
+                </button>
+              )}
               {result.errors?.length > 0 && (
                 <div className="mt-3">
                   <p className="text-sm font-medium text-red-600 dark:text-red-400">Fejl ({result.errors.length}):</p>
